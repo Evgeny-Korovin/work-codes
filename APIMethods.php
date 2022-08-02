@@ -1,3 +1,34 @@
+<?php
+
+namespace App\Http\Controllers\Exchange;
+
+use App\Actions\NotificationSendAction;
+use App\Actions\UsersByWorkPlaceRoleAction;
+use App\Http\Controllers\Controller;
+use App\Http\Controllers\CRM\CRMController;
+use App\Library\OneCAPI;
+use App\Notifications\NotificationsProvider;
+use DateTime;
+use DateTimeZone;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
+use Modules\Documents\Entities\WorkingDocumentationChange;
+use Modules\Items\Entities\Bill;
+use Modules\Items\Entities\Item;
+use Modules\Orders\Entities\Order;
+use Modules\Platform\User\Entities\User;
+use Modules\ProductionPlan\Entities\ProductionPlan;
+use Modules\Accounts\Entities\Account;
+use Modules\ProductionWorklog\Entities\ProductionWorklog;
+use Modules\Projects\Entities\Project;
+use Illuminate\Support\Facades\DB;
+use function auth;
+use function request;
+use function response;
+
+class OneCController extends Controller
+{
+    
 public function workingDocumentationCreate(NotificationSendAction $actionSend, UsersByWorkPlaceRoleAction $actionUsers)
     {
         $credentials = request(['item_id', 'creator', 'change_description', 'changed_pages', 'document_type']);
@@ -47,7 +78,7 @@ public function workingDocumentationCreate(NotificationSendAction $actionSend, U
         }
     }
 
-public function workingDocumentationIssue(NotificationSendAction $actionSend, UsersByWorkPlaceRoleAction $actionUsers)
+    public function workingDocumentationIssue(NotificationSendAction $actionSend, UsersByWorkPlaceRoleAction $actionUsers)
     {
         $credentials = request(['id', 'issued']);
 
@@ -90,3 +121,124 @@ public function workingDocumentationIssue(NotificationSendAction $actionSend, Us
             return response()->json(['error' => $e->getMessage()], $e->getCode() ?: 520);
         }
     }
+
+    public function patchData()
+    {
+        $entityTables = [
+            'order_items' => 'Modules\Items\Entities\Item',
+            'orders' => 'Modules\Orders\Entities\Order',
+            'calculations' => 'Modules\Calculations\Entities\Calculation',
+            'problems' => 'Modules\ItemProblems\Entities\ItemProblem',
+            'tasks' => 'Modules\Tasks\Entities\Task',
+            'accounts' => 'Modules\Accounts\Entities\Account',
+            'construction_drawings' => 'Modules\ConstructionDrawings\Entities\ConstructionDrawings',
+            'contacts' => 'Modules\Contacts\Entities\Contact',
+            'deficit' => 'Modules\Deficit\Entities\Deficit',
+            'documents' => 'Modules\Documents\Entities\Document',
+            'engineer_worklog' => 'Modules\EngineerWorklog\Entities\EngineerWorklog',
+            'production_plan' => 'Modules\ProductionPlan\Entities\ProductionPlan',
+            'production_worklog' => 'Modules\ProductionWorklog\Entities\ProductionWorklog',
+            'production_timelog' => 'Modules\ProductionWorklog\Entities\ProductionTimelog',
+            'projects' => 'Modules\Projects\Entities\Project',
+            'properties' => 'Modules\Properties\Entities\Property',
+            'returns_to_production' => 'Modules\ReturnsToProduction\Entities\ReturnToProduction',
+            'vendor_registration' => 'Modules\VendorRegistration\Entities\VendorRegistration',
+        ];
+
+        $credentials = request(['table', 'ids', 'field', 'value']);
+
+        if (empty($credentials['table']) || empty($credentials['ids']) || empty($credentials['field'])) {
+            return response()->json(['error' => 'not enough params', 'credentials' => $credentials], 500);
+        } else {
+            $table = $credentials['table'];
+            $ids = $credentials['ids'];
+            $field = $credentials['field'];
+            $value = $credentials['value'];
+            if ($value == 'null') {
+                $value = null;
+            }
+        }
+
+        try {
+
+            if (isset($entityTables[$table])) {
+
+                foreach ($ids as $id) {
+                    $entity = \App::make($entityTables[$table])::find($id);
+                    if ($entity) {
+                        $entity->{$field} = $value;
+                        $entity->save();
+                    }
+                }
+
+                $entities = \App::make($entityTables[$table])::whereIn('id', $ids)->get()->toArray();
+
+                return response()->json($entities);
+
+            }
+
+        } catch (\Exception $e) {
+            Log::error(json_encode(['error' => $e->getMessage(), 'code' => $e->getCode(), 'exception' => $e]));
+            return response()->json(['error' => $e->getMessage()], $e->getCode() ?: 520);
+        }
+    }
+
+    public function postData()
+    {
+        $entityTables = [
+            'order_items' => 'Modules\Items\Entities\Item',
+            'orders' => 'Modules\Orders\Entities\Order',
+            'calculations' => 'Modules\Calculations\Entities\Calculation',
+            'problems' => 'Modules\ItemProblems\Entities\ItemProblem',
+            'tasks' => 'Modules\Tasks\Entities\Task',
+            'accounts' => 'Modules\Accounts\Entities\Account',
+            'construction_drawings' => 'Modules\ConstructionDrawings\Entities\ConstructionDrawings',
+            'contacts' => 'Modules\Contacts\Entities\Contact',
+            'deficit' => 'Modules\Deficit\Entities\Deficit',
+            'documents' => 'Modules\Documents\Entities\Document',
+            'engineer_worklog' => 'Modules\EngineerWorklog\Entities\EngineerWorklog',
+            'production_plan' => 'Modules\ProductionPlan\Entities\ProductionPlan',
+            'production_worklog' => 'Modules\ProductionWorklog\Entities\ProductionWorklog',
+            'production_timelog' => 'Modules\ProductionWorklog\Entities\ProductionTimelog',
+            'projects' => 'Modules\Projects\Entities\Project',
+            'properties' => 'Modules\Properties\Entities\Property',
+            'returns_to_production' => 'Modules\ReturnsToProduction\Entities\ReturnToProduction',
+            'vendor_registration' => 'Modules\VendorRegistration\Entities\VendorRegistration',
+        ];
+
+        $credentials = request(['table', 'entries']);
+
+        if (empty($credentials['table']) || empty($credentials['entries'])) {
+            return response()->json(['error' => 'not enough params', 'credentials' => $credentials], 500);
+        } else {
+            $table = $credentials['table'];
+            $entries = $credentials['entries'];
+        }
+
+        try {
+
+            $ids = [];
+
+            if (isset($entityTables[$table]))  {
+
+                foreach ($entries as $entry) {
+                    $entity = new $entityTables[$table];
+                    foreach ($entry as $key => $value) {
+                        $entity->{$key} = $value;
+                    }
+                    $entity->save();
+
+                    $ids[] = $entity->id;
+                }
+
+                $response = \App::make($entityTables[$table])->whereIn('id', $ids)->get()->toArray();
+
+                return response()->json($response);
+            }
+
+        } catch (\Exception $e) {
+            Log::error(json_encode(['error' => $e->getMessage(), 'code' => $e->getCode(), 'exception' => $e]));
+            return response()->json(['error' => $e->getMessage()], $e->getCode() ?: 520);
+        }
+    }
+}
